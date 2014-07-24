@@ -704,7 +704,7 @@ public class UIWeekView extends UICalendarView {
             JavascriptManager jsManager = event.getRequestContext().getJavascriptManager();
             RequireJS requireJS = jsManager.getRequireJS();
             requireJS.require("PORTLET/calendar/CalendarPortlet","cal");
-            requireJS.addScripts("cal.UIWeekView.setSize();cal.UIWeekView.cleanUp();");
+            requireJS.addScripts("cal.UICalendarPortlet.checkFilter();cal.UIWeekView.cleanUp();");
 
           }
         } catch (PathNotFoundException e) {
