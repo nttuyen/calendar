@@ -24,9 +24,12 @@ import java.util.List;
 import java.util.TimeZone;
 
 import org.exoplatform.calendar.service.Calendar;
+import org.exoplatform.calendar.service.CalendarEvent;
 import org.exoplatform.calendar.service.CalendarService;
+import org.exoplatform.calendar.service.EventCategory;
 import org.exoplatform.calendar.service.GroupCalendarData;
 import org.exoplatform.calendar.service.Utils;
+import org.exoplatform.commons.utils.ListAccess;
 import org.exoplatform.component.test.AbstractKernelTest;
 import org.exoplatform.component.test.ConfigurationUnit;
 import org.exoplatform.component.test.ConfiguredBy;
@@ -37,25 +40,27 @@ import org.exoplatform.services.organization.Group;
 import org.exoplatform.services.organization.Membership;
 import org.exoplatform.services.organization.MembershipHandler;
 import org.exoplatform.services.organization.OrganizationService;
+import org.exoplatform.services.organization.User;
 import org.exoplatform.services.security.ConversationState;
 import org.exoplatform.services.security.Identity;
 import org.exoplatform.services.security.MembershipEntry;
 
 /**
  * Created by The eXo Platform SAS
+ *
  * @author : Hung nguyen
- *          hung.nguyen@exoplatform.com
- * May 7, 2008  
+ *         hung.nguyen@exoplatform.com
+ *         May 7, 2008
  */
 
 @ConfiguredBy({
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/exo.portal.component.portal-configuration.xml"),
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/exo.portal.component.test.jcr-configuration.xml"),
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/exo.portal.component.identity-configuration.xml"),
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/test-portal-configuration.xml"),
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/exo.calendar.component.core.test.configuration.xml"),
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/exo.calendar.test.jcr-configuration.xml"),
-  @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/exo.calendar.test.portal-configuration.xml")
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/exo.portal.component.portal-configuration.xml"),
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/exo.portal.component.test.jcr-configuration.xml"),
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/exo.portal.component.identity-configuration.xml"),
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/test-portal-configuration.xml"),
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/exo.calendar.component.core.test.configuration.xml"),
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/exo.calendar.test.jcr-configuration.xml"),
+        @ConfigurationUnit(scope = ContainerScope.PORTAL, path = "conf/portal/exo.calendar.test.portal-configuration.xml")
 })
 
 public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
@@ -64,8 +69,8 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
 
   protected TimeZone tz = java.util.Calendar.getInstance().getTimeZone();
   protected String timeZone = tz.getID();
-  protected String   username = "root";
-  protected SimpleDateFormat df = new SimpleDateFormat(Utils.DATE_TIME_FORMAT) ;
+  protected String username = "root";
+  protected SimpleDateFormat df = new SimpleDateFormat(Utils.DATE_TIME_FORMAT);
 
   protected OrganizationService organizationService_;
   protected CalendarService calendarService_;
@@ -84,38 +89,52 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
 
   @Override
   public void tearDown() throws Exception {
-    cleanData();
+    ListAccess<User> users = organizationService_.getUserHandler().findAllUsers();
+    int size = users.getSize();
+    for (User u : users.load(0, size)) {
+      cleanData(u);
+    }
     end();
   }
 
-  protected void cleanData() throws Exception {
+  protected void cleanData(User user) throws Exception {
     //. Get all private calendar of user
-    List<Calendar> cals = calendarService_.getUserCalendars(username, true);
+    List<Calendar> cals = calendarService_.getUserCalendars(user.getUserName(), true);
 
     //. Load all group calendar
     List<Group> groups = new ArrayList<Group>();
-    groups.addAll(organizationService_.getGroupHandler().findGroupsOfUser(username));
+    groups.addAll(organizationService_.getGroupHandler().findGroupsOfUser(user.getUserName()));
     String[] groupIds = new String[groups.size()];
     for (int i = 0; i < groups.size(); i++) {
       groupIds[i] = groups.get(i).getId();
     }
-    for (GroupCalendarData g : calendarService_.getGroupCalendars(groupIds, true, username)) {
+    for (GroupCalendarData g : calendarService_.getGroupCalendars(groupIds, true, user.getUserName())) {
       cals.addAll(g.getCalendars());
     }
 
     //. Find all shared calendar
-    GroupCalendarData gData = calendarService_.getSharedCalendars(username, true);
+    GroupCalendarData gData = calendarService_.getSharedCalendars(user.getUserName(), true);
     if (gData != null) cals.addAll(gData.getCalendars());
 
     //. Remove all calendar
     for (int i = 0; i < cals.size(); i++) {
       String id = cals.get(i).getId();
-      calendarService_.removeUserCalendar(username, id);
+      calendarService_.removeUserCalendar(user.getUserName(), id);
       calendarService_.removePublicCalendar(id);
-      calendarService_.removeSharedCalendar(username, id);
+      calendarService_.removeSharedCalendar(user.getUserName(), id);
     }
   }
 
+  protected Calendar createPrivateCalendar(String username, String name, String description) throws Exception {
+    Calendar calendar = new Calendar();
+    calendar.setName(name);
+    calendar.setDescription(description);
+    calendar.setPublic(false);
+    calendarService_.saveUserCalendar(username, calendar, true);
+    return calendar;
+  }
+
+  @Deprecated
   protected Calendar createCalendar(String name, String description) {
     try {
       // Create and save calendar
@@ -131,13 +150,30 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     return null;
   }
 
+  protected Calendar createPublicCalendar(String[] groups, String calName, String description) throws Exception {
+    Calendar calendar = new Calendar();
+    calendar.setName(calName);
+    calendar.setDescription(description);
+    calendar.setPublic(true);
+    calendar.setGroups(groups);
+    calendarService_.savePublicCalendar(calendar, true);
+    return calendar;
+  }
+
+  /**
+   * call createPublicCalendar(new String[]{"/platform/users", "/organization/management/executive-board"}, calName, description)
+   * @param name
+   * @param description
+   * @return
+   */
+  @Deprecated
   protected Calendar createPublicCalendar(String name, String description) {
     try {
       Calendar publicCalendar = new Calendar();
       publicCalendar.setName(name);
       publicCalendar.setDescription(description);
       publicCalendar.setPublic(true);
-      publicCalendar.setGroups(new String[]{"/platform/users","/organization/management/executive-board"});
+      publicCalendar.setGroups(new String[]{"/platform/users", "/organization/management/executive-board"});
       calendarService_.savePublicCalendar(publicCalendar, true);
       return publicCalendar;
     } catch (Exception e) {
@@ -146,8 +182,25 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     }
   }
 
+  protected EventCategory createEventCategory1(String username, String name) throws Exception {
+    EventCategory eventCategory = new EventCategory();
+    eventCategory.setName(name);
+    calendarService_.saveEventCategory(username, eventCategory, true);
+    return eventCategory;
+  }
+
+  public CalendarEvent createNewEventInstance(String summary) {
+    CalendarEvent event = new CalendarEvent();
+    event.setSummary(summary);
+    java.util.Calendar from = java.util.Calendar.getInstance();
+    event.setFromDateTime(from.getTime());
+    from.add(java.util.Calendar.HOUR, 1);
+    event.setToDateTime(from.getTime());
+    return event;
+  }
+
   @SuppressWarnings("unchecked")
-  protected  <T> T getService(Class<T> clazz) {
+  protected <T> T getService(Class<T> clazz) {
     return (T) getContainer().getComponentInstanceOfType(clazz);
   }
 
@@ -163,7 +216,8 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     } catch (Exception e) {
       // TODO Auto-generated catch block
       e.printStackTrace();
-    };
+    }
+    ;
     login(username, entries);
   }
 
@@ -171,5 +225,16 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     Identity identity = new Identity(username, entries);
     ConversationState state = new ConversationState(identity);
     ConversationState.setCurrent(state);
+  }
+
+  @Deprecated
+  protected CalendarEvent newEvent(String summary) {
+    CalendarEvent event = new CalendarEvent();
+    event.setSummary(summary);
+    java.util.Calendar from = java.util.Calendar.getInstance();
+    event.setFromDateTime(from.getTime());
+    from.add(java.util.Calendar.HOUR, 1);
+    event.setToDateTime(from.getTime());
+    return event;
   }
 }
