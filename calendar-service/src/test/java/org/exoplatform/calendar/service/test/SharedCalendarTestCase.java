@@ -66,8 +66,8 @@ public class SharedCalendarTestCase extends BaseCalendarServiceTestCase {
     //TODO: @nttuyen consider this test
     public void testGetTypeOfCalendar() {
         try {
-            Calendar calendar = createCalendar("myCalendar", "Description");
-            Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+            Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
+            Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
             Calendar sharedCalendar = createSharedCalendar("sharedCalendar", "shareDescription");
 
             assertEquals(Utils.PRIVATE_TYPE, calendarService_.getTypeOfCalendar(username, calendar.getId()));
@@ -161,7 +161,7 @@ public class SharedCalendarTestCase extends BaseCalendarServiceTestCase {
         }
     }
     public void testShareCalendarWithEditPermission() throws Exception {
-        Calendar cal = createCalendar("test share", "test sharing with edit permission");
+        Calendar cal = createPrivateCalendar(username, "test share", "test sharing with edit permission");
         List<String> sharedUsers = new ArrayList<String>();
         // need to update these below values if test-portal-configuration.xml is changed
         String sharedUser = "mary";
@@ -179,9 +179,9 @@ public class SharedCalendarTestCase extends BaseCalendarServiceTestCase {
         calendarService_.saveUserCalendar(username, cal, false);
         calendarService_.shareCalendar(username, cal.getId(), sharedUsers);
 
-        CalendarEvent eventByMary = newEvent("mary");
-        CalendarEvent eventByJohn = newEvent("john");
-        CalendarEvent eventByDemo = newEvent("demo");
+        CalendarEvent eventByMary = createCalendarEventInstance("mary");
+        CalendarEvent eventByJohn = createCalendarEventInstance("john");
+        CalendarEvent eventByDemo = createCalendarEventInstance("demo");
 
         try{
             calendarService_.saveEventToSharedCalendar("john", cal.getId(), eventByJohn, true);

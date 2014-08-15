@@ -61,7 +61,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
     java.util.Calendar toCal = java.util.Calendar.getInstance(tz);
     toCal.set(2013, 2, 7, 6, 30);
 
-    Calendar calendar = createCalendar(username, "TestRepetitiveEvent");
+    Calendar calendar = createPrivateCalendar(username, username, "TestRepetitiveEvent");
     CalendarEvent recurEvent = new CalendarEvent();
     recurEvent.setSummary("TestRemoveOccurence");
     recurEvent.setFromDateTime(fromCal.getTime());
@@ -125,7 +125,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
   }
 
   //mvn test -Dtest=TestCalendarService#testSaveAllOccurrenceEvent
-  public void tetSaveAllOccurrenceEvent() throws Exception{
+  public void testSaveAllOccurrenceEvent() throws Exception {
 
     java.util.Calendar fromCal = java.util.Calendar.getInstance(tz);
     fromCal.set(2013, 2, 7, 5, 30);
@@ -133,7 +133,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
     java.util.Calendar toCal = java.util.Calendar.getInstance(tz);
     toCal.set(2013, 2, 7, 6, 30);
 
-    Calendar calendar = createCalendar(username, "unified search test");
+    Calendar calendar = createPrivateCalendar(username, username, "unified search test");
     CalendarEvent recurEvent = new CalendarEvent();
     recurEvent.setSummary("repeated past");
     recurEvent.setFromDateTime(fromCal.getTime());
@@ -171,7 +171,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
     recurEvent.setSummary("change and update all");
     calendarService_.saveAllSeriesEvents(recurEvent, username);
     occMap = calendarService_.getOccurrenceEvents(recurEvent, from, to, timeZone);
-    assertEquals(5, occMap.size());
+    assertEquals(4, occMap.size());
 
     calendarService_.removeRecurrenceSeries(username, recurEvent);
     calendarService_.removeUserCalendar(username, calendar.getId());
@@ -233,7 +233,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
   }
 
   //mvn test -Dtest=TestCalendarService#testSaveOneOccurrenceEvent
-  public void tetSaveOneOccurrenceEvent() throws Exception{
+  public void testSaveOneOccurrenceEvent() throws Exception{
 
     CalendarEvent recurEvent = createRepetitiveEventForTest();
 
@@ -352,7 +352,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
     java.util.Calendar toCal = java.util.Calendar.getInstance(tz);
     toCal.set(2013, 2, 7, 6, 30);
 
-    Calendar calendar = createCalendar(username, "unified search test");
+    Calendar calendar = createPrivateCalendar(username, username, "unified search test");
     CalendarEvent recurEvent = new CalendarEvent();
     recurEvent.setSummary("repeated past");
     recurEvent.setFromDateTime(fromCal.getTime());
@@ -449,7 +449,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
     java.util.Calendar toCal = java.util.Calendar.getInstance(tz);
     toCal.set(2013, 2, 7, 6, 30);
 
-    Calendar calendar = createCalendar(username, "unified search test");
+    Calendar calendar = createPrivateCalendar(username, username, "unified search test");
     CalendarEvent recurEvent = new CalendarEvent();
     recurEvent.setSummary("repeated past");
     recurEvent.setFromDateTime(fromCal.getTime());
@@ -543,8 +543,8 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
   public void testUpdateRecurrenceSeries() {
     try {
 
-      Calendar calendar = createCalendar("myCalendar", "Description");
-      Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+      Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
+      Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
 
       EventCategory eventCategory = createEventCategory("eventCategoryName0", "description");
 
@@ -694,7 +694,7 @@ public class RecurringEventTestCase extends BaseCalendarServiceTestCase {
     java.util.Calendar toCal = java.util.Calendar.getInstance(tz);
     toCal.set(2013, 2, 7, 6, 30);
 
-    Calendar calendar = createCalendar(username, "TestSaveOneOccurrence");
+    Calendar calendar = createPrivateCalendar(username, username, "TestSaveOneOccurrence");
 
     CalendarEvent recurEvent = new CalendarEvent();
     recurEvent.setSummary("repeated past");

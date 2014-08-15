@@ -20,26 +20,19 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.jcr.PathNotFoundException;
-import javax.jcr.query.Query;
 
 import org.exoplatform.calendar.service.Attachment;
 import org.exoplatform.calendar.service.Calendar;
 import org.exoplatform.calendar.service.CalendarEvent;
-import org.exoplatform.calendar.service.CalendarImportExport;
 import org.exoplatform.calendar.service.CalendarService;
 import org.exoplatform.calendar.service.CalendarSetting;
 import org.exoplatform.calendar.service.EventCategory;
@@ -50,31 +43,23 @@ import org.exoplatform.calendar.service.RemoteCalendar;
 import org.exoplatform.calendar.service.RemoteCalendarService;
 import org.exoplatform.calendar.service.RssData;
 import org.exoplatform.calendar.service.Utils;
-import org.exoplatform.calendar.service.impl.CalendarSearchResult;
 import org.exoplatform.calendar.service.impl.CalendarSearchServiceConnector;
 import org.exoplatform.calendar.service.impl.CalendarServiceImpl;
 import org.exoplatform.calendar.service.impl.EventSearchConnector;
 import org.exoplatform.calendar.service.impl.JCRDataStorage;
 import org.exoplatform.calendar.service.impl.NewGroupListener;
 import org.exoplatform.calendar.service.impl.NewUserListener;
-import org.exoplatform.calendar.service.impl.TaskSearchConnector;
 import org.exoplatform.calendar.service.impl.UnifiedQuery;
 import org.exoplatform.commons.api.search.data.SearchContext;
 import org.exoplatform.commons.api.search.data.SearchResult;
-import org.exoplatform.container.ExoContainerContext;
 import org.exoplatform.container.xml.InitParams;
 import org.exoplatform.container.xml.ValueParam;
 import org.exoplatform.services.jcr.RepositoryService;
 import org.exoplatform.services.jcr.ext.common.SessionProvider;
 import org.exoplatform.services.jcr.util.IdGenerator;
 import org.exoplatform.services.organization.Group;
-import org.exoplatform.services.organization.Membership;
-import org.exoplatform.services.organization.MembershipHandler;
 import org.exoplatform.services.organization.MembershipType;
 import org.exoplatform.services.organization.User;
-import org.exoplatform.services.security.ConversationState;
-import org.exoplatform.services.security.Identity;
-import org.exoplatform.services.security.MembershipEntry;
 import org.exoplatform.web.controller.metadata.ControllerDescriptor;
 import org.exoplatform.web.controller.metadata.DescriptorBuilder;
 import org.exoplatform.web.controller.router.Router;
@@ -134,27 +119,22 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
     //after removing
     assertNull(calendarService_.getEventById(eventId));
 
-    calendarService_.removeUserCalendar(username,calendarId);
-    calendarService_.removeEventCategory(username, eventCategoryId);
+//    calendarService_.removeUserCalendar(username,calendarId);
+//    calendarService_.removeEventCategory(username, eventCategoryId);
   }
 
   //mvn test -Dtest=TestCalendarService#testGetCalendarById
-  public void testGetCalendarById() throws Exception{
-    Calendar cal = new Calendar();
-    cal.setName("myCalendar");
-    cal.setDescription("Desscription");
-    //cal.setCategoryId();
-    cal.setPublic(true);
-    calendarService_.saveUserCalendar(username, cal, true);
-    EventCategory eventCategory = new EventCategory();
-    String name = "eventCategoryName";
-    eventCategory.setName(name);
+  public void testGetCalendarById() throws Exception {
+    Calendar cal = createPrivateCalendar(username, "myCalendar", "Desscription");
+    EventCategory eventCategory = createUserEventCategory(username, "eventCategoryName");
 
     Calendar calSave = calendarService_.getCalendarById(cal.getId());
     assertNotNull(calSave);
     assertEquals(Calendar.TYPE_PRIVATE, calendarService_.getTypeOfCalendar(username, calSave.getId()));
+    assertEquals("myCalendar", calSave.getName());
+    assertEquals("Desscription", calSave.getDescription());
 
-    calendarService_.saveEventCategory(username, eventCategory, true);
+    //TODO: remove below test
     CalendarEvent calEvent = new CalendarEvent();
     calEvent.setEventType(CalendarEvent.TYPE_EVENT);
     calEvent.setEventCategoryId(eventCategory.getId());
@@ -170,8 +150,8 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
     CalendarEvent eventSave = calendarService_.getEventById(calEvent.getId());
     assertNotNull(eventSave);
 
-    calendarService_.removeEventCategory(username, eventCategory.getId());
-    assertNotNull(calendarService_.removeUserCalendar(username, calSave.getId()));
+    //calendarService_.removeEventCategory(username, eventCategory.getId());
+    //assertNotNull(calendarService_.removeUserCalendar(username, calSave.getId()));
 
   }
 
@@ -603,7 +583,7 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
 
   public void testSaveUserCalendar() {
     try {
-      Calendar calendar = createCalendar("CalendarName", "CalendarDesscription");
+      Calendar calendar = createPrivateCalendar(username, "CalendarName", "CalendarDesscription");
 
       // Edit calendar
       String newCalendarName = "CalendarName edited";
@@ -620,12 +600,11 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
   }
 
   public void testSavePublicCalendar() {
-    Calendar calendar = createPublicCalendar("CalendarName", "CalendarDesscription");
-
     try {
+      Calendar calendar = createPublicCalendar(new String[]{"/platform/users", "/organization/management/executive-board"}, "CalendarName", "CalendarDesscription");
       assertNotNull(calendarService_.getGroupCalendar(calendar.getId())) ;
       assertEquals(calendar, calendarService_.getCalendarById(calendar.getId()));
-      calendarService_.removePublicCalendar(calendar.getId()) ;
+
     } catch (Exception e) {
       fail();
     }
@@ -635,11 +614,11 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
 
   public void testSaveEventCategory() {
     try {
-      Calendar calendar = createCalendar("myCalendar", "Description");
-      Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+      Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
+      Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
 
       String eventCategoryName = "eventCategoryName1";
-      EventCategory eventCategory = createEventCategory(eventCategoryName, "description");
+      EventCategory eventCategory = createUserEventCategory(username, eventCategoryName);
 
       java.util.Calendar fromCal = java.util.Calendar.getInstance();
       java.util.Calendar toCal = java.util.Calendar.getInstance();
@@ -673,10 +652,10 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
 
   public void testRemoveEventCategory() {
     try {
-      Calendar calendar = createCalendar("myCalendar", "Description");
-      Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+      Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
+      Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
 
-      EventCategory eventCategory = createEventCategory("eventCategoryName2", "description");
+      EventCategory eventCategory = createUserEventCategory(username, "eventCategoryName2");
 
       java.util.Calendar fromCal = java.util.Calendar.getInstance();
       java.util.Calendar toCal = java.util.Calendar.getInstance();
@@ -721,9 +700,9 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
 
   public void testGetEvent() {
     try {
-      Calendar calendar = createCalendar("myCalendar", "Description");
+      Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
 
-      EventCategory eventCategory = createEventCategory("eventCategoryName3", "description");
+      EventCategory eventCategory = createUserEventCategory(username, "eventCategoryName3");
 
       java.util.Calendar fromCal = java.util.Calendar.getInstance();
       java.util.Calendar toCal = java.util.Calendar.getInstance();
@@ -803,9 +782,9 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
   }
 
   public void testGetEventById() throws Exception {
-    Calendar calendar = createCalendar("myCalendar", "Description");
+    Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
 
-    EventCategory eventCategory = createEventCategory("eventCategoryName3", "description");
+    EventCategory eventCategory = createUserEventCategory(username, "eventCategoryName3");
     java.util.Calendar fromCal = java.util.Calendar.getInstance();
     java.util.Calendar toCal = java.util.Calendar.getInstance();
     toCal.add(java.util.Calendar.HOUR, 1);
@@ -830,10 +809,10 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
 
   public void testMoveEvent() {
     try {
-      Calendar calendar = createCalendar("myCalendar", "Description");
-      Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+      Calendar calendar = createPrivateCalendar(username, "myCalendar", "Description");
+      Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
 
-      EventCategory eventCategory = createEventCategory("MoveEventCategory", "description");
+      EventCategory eventCategory = createUserEventCategory(username, "MoveEventCategory");
 
       java.util.Calendar fromCal = java.util.Calendar.getInstance();
       java.util.Calendar toCal = java.util.Calendar.getInstance();
@@ -879,9 +858,9 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
 
   public void testCheckFreeBusy() {
     try {
-      Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+      Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
 
-      EventCategory eventCategory = createEventCategory("CheckFreeBusyCategory", "description");
+      EventCategory eventCategory = createUserEventCategory(username, "CheckFreeBusyCategory");
 
       java.util.Calendar fromCal = java.util.Calendar.getInstance();
       java.util.Calendar toCal = java.util.Calendar.getInstance();
@@ -917,9 +896,9 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
   //mvn test -Dtest=TestCalendarService#testGetPublicEvents
   public void testGetPublicEvents() {
     try {
-      Calendar publicCalendar = createPublicCalendar("publicCalendar", "publicDescription");
+      Calendar publicCalendar = createPublicCalendar(userGroups, "publicCalendar", "publicDescription");
 
-      EventCategory eventCategory = createEventCategory("GetPublicEventsCategory", "description");
+      EventCategory eventCategory = createUserEventCategory(username, "GetPublicEventsCategory");
 
       java.util.Calendar fromCal = java.util.Calendar.getInstance();
       fromCal.add(java.util.Calendar.HOUR, 1);
@@ -1016,90 +995,6 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
       fail();
     }
   }
-
-  //mvn test -Dtest=TestCalendarService#testImportExportIcs
-  public void testImportExportIcs() throws Exception {
-    CalendarImportExport calIE = calendarService_.getCalendarImportExports(CalendarService.ICALENDAR);
-    String calendarId = "IcsCalendar";
-    Calendar cal = new Calendar();
-    cal.setId(calendarId);
-    cal.setName(calendarId);
-    cal.setPublic(true);
-    calendarService_.saveUserCalendar(username, cal, true);
-
-    // event with high priority
-    InputStream icalInputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("ObmCalendar_isolated.ics");
-    // event with medium priority
-    InputStream icalInputStream2 = Thread.currentThread().getContextClassLoader().getResourceAsStream("ObmCalendar_isolated_p2.ics");
-    // event with low priority
-    InputStream icalInputStream3 = Thread.currentThread().getContextClassLoader().getResourceAsStream("ObmCalendar_isolated_p3.ics");
-
-    // test non-standard ics file, cf CAL-514, CAL-524
-    InputStream icalInputStream4 = Thread.currentThread()
-            .getContextClassLoader()
-            .getResourceAsStream("nonstandard.ics");
-    InputStream icalInputStream5 = Thread.currentThread()
-            .getContextClassLoader()
-            .getResourceAsStream("png_attachment.ics");
-
-    calIE.importCalendar(username, icalInputStream, calendarId, calendarId, null, null, false);
-    calIE.importCalendar(username, icalInputStream2, calendarId, calendarId, null, null, false);
-    calIE.importCalendar(username, icalInputStream3, calendarId, calendarId, null, null, false);
-    calIE.importCalendar(username, icalInputStream4, calendarId, calendarId, null, null, false);
-    calIE.importCalendar(username, icalInputStream5, calendarId, calendarId, null, null, false);
-
-    List<String> calendarIds = new ArrayList<String>();
-    calendarIds.add(calendarId);
-    List<CalendarEvent> events = calendarService_.getUserEventByCalendar(username, calendarIds);
-
-    assertEquals(5, events.size());
-
-    CalendarEvent event = events.get(0) ;
-    assertEquals(CalendarEvent.PRIORITY[CalendarEvent.PRI_HIGH], event.getPriority());
-
-    CalendarEvent event2 = events.get(1) ;
-    assertEquals(CalendarEvent.PRIORITY[CalendarEvent.PRI_MEDIUM],  event2.getPriority());
-
-    CalendarEvent event3 = events.get(2) ;
-    assertEquals(CalendarEvent.PRIORITY[CalendarEvent.PRI_LOW],  event3.getPriority());
-
-    assertNotNull(event.getFromDateTime());
-    assertNotNull(event.getToDateTime());
-    assertNotNull(event.getSummary());
-
-    //export single event by id
-    OutputStream icalOutputStream  =  calIE.exportEventCalendar(username, calendarId, CalendarImportExport.PRIVATE_TYPE, event.getId());
-    assertNotNull(icalOutputStream);
-
-    //export events in set of calendar
-    icalOutputStream.close();
-    icalOutputStream  =  calIE.exportCalendar(username, calendarIds, CalendarImportExport.PRIVATE_TYPE, 3);
-    assertNotNull(icalOutputStream);
-
-    icalOutputStream.close();
-    icalInputStream.close();
-
-    calendarService_.removeUserCalendar(username, calendarId);
-  }
-  //mvn test -Dtest=TestCalendarService#testImportCSVFile
-  public void testImportCSVFile() throws Exception{
-    CalendarImportExport calIE = calendarService_.getCalendarImportExports(CalendarService.EXPORTEDCSV);
-    String calendarId = "CSVCalendar";
-    Calendar cal = new Calendar();
-    cal.setId(calendarId);
-    cal.setName(calendarId);
-    cal.setPublic(true);
-    calendarService_.saveUserCalendar(username, cal, true);
-
-    InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream("sunbird_calendar.csv");
-    calIE.importCalendar(username, in, calendarId, calendarId, null, null, false);
-    List<String> calendarIds = new ArrayList<String>();
-    calendarIds.add(calendarId);
-    List<CalendarEvent> events = calendarService_.getUserEventByCalendar(username, calendarIds);
-    assertEquals(3, events.size());
-
-  }
-
     private void checkFields(SearchResult item) {
         assertNotNull(item.getTitle()) ;
         assertNotNull(item.getExcerpt()) ;
@@ -1108,18 +1003,6 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
         assertNotNull(item.getUrl());
         assertEquals(true, item.getDate() > 0);
     }
-
-  private EventCategory createEventCategory(String name, String description) {
-    try {
-      EventCategory eventCategory = new EventCategory();
-      eventCategory.setName(name);
-      calendarService_.saveEventCategory(username, eventCategory, true);
-      return eventCategory;
-    } catch (Exception e) {
-      fail();
-      return null;
-    }
-  }
 
   private CalendarEvent createUserEvent(String calendarId,
                                         EventCategory eventCategory,
@@ -1142,9 +1025,9 @@ public class TestCalendarService extends BaseCalendarServiceTestCase {
   }
 
   private CalendarEvent createUserEvent(String summary) throws Exception{
-    CalendarEvent event = newEvent(summary);
-    Calendar calendar = createCalendar("CalendarTest","CalendarTest");
-    EventCategory category = createEventCategory("CalendarCategoryTest","CalendarCategoryTest");
+    CalendarEvent event = createCalendarEventInstance(summary);
+    Calendar calendar = createPrivateCalendar(username, "CalendarTest","CalendarTest");
+    EventCategory category = createUserEventCategory(username, "CalendarCategoryTest");
     java.util.Calendar from = java.util.Calendar.getInstance();
     java.util.Calendar to   = java.util.Calendar.getInstance();
     to.add(java.util.Calendar.HOUR, 1);

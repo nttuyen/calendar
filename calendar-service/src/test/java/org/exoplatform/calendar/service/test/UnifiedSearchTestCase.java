@@ -605,7 +605,7 @@ public class UnifiedSearchTestCase extends BaseCalendarServiceTestCase {
             calendarService_.saveUserCalendar(username, cal, true);
             calendars.add(cal);
 
-            CalendarEvent calEvent = newEvent(keyword);
+            CalendarEvent calEvent = createCalendarEventInstance(keyword);
             calendarService_.saveUserEvent(username, cal.getId(), calEvent, true);
         }
 

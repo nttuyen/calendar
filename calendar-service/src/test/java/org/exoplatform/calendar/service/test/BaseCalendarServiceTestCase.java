@@ -29,6 +29,8 @@ import org.exoplatform.calendar.service.CalendarService;
 import org.exoplatform.calendar.service.EventCategory;
 import org.exoplatform.calendar.service.GroupCalendarData;
 import org.exoplatform.calendar.service.Utils;
+import org.exoplatform.calendar.service.impl.CalendarServiceImpl;
+import org.exoplatform.calendar.service.impl.JCRDataStorage;
 import org.exoplatform.commons.utils.ListAccess;
 import org.exoplatform.component.test.AbstractKernelTest;
 import org.exoplatform.component.test.ConfigurationUnit;
@@ -70,6 +72,7 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
   protected TimeZone tz = java.util.Calendar.getInstance().getTimeZone();
   protected String timeZone = tz.getID();
   protected String username = "root";
+  protected String[] userGroups = new String[]{"/platform/users", "/organization/management/executive-board"};
   protected SimpleDateFormat df = new SimpleDateFormat(Utils.DATE_TIME_FORMAT);
 
   protected OrganizationService organizationService_;
@@ -82,6 +85,12 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     // Init services
     organizationService_ = getService(OrganizationService.class);
     calendarService_ = getService(CalendarService.class);
+
+    //. Init JCR root node
+    JCRDataStorage storage = ((CalendarServiceImpl)calendarService_).getDataStorage();
+    storage.getPublicCalendarHome();
+    storage.getPublicCalendarServiceHome();
+    storage.getUserCalendarHome(username);
 
     // Login user
     login(username);
@@ -123,6 +132,12 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
       calendarService_.removePublicCalendar(id);
       calendarService_.removeSharedCalendar(user.getUserName(), id);
     }
+
+    //. Remove all EventCategory
+    List<EventCategory> categories = calendarService_.getEventCategories(user.getUserName());
+    for(EventCategory category : categories) {
+      calendarService_.removeEventCategory(user.getUserName(), category.getId());
+    }
   }
 
   protected Calendar createPrivateCalendar(String username, String name, String description) throws Exception {
@@ -132,22 +147,6 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     calendar.setPublic(false);
     calendarService_.saveUserCalendar(username, calendar, true);
     return calendar;
-  }
-
-  @Deprecated
-  protected Calendar createCalendar(String name, String description) {
-    try {
-      // Create and save calendar
-      Calendar calendar = new Calendar();
-      calendar.setName(name);
-      calendar.setDescription(description);
-      calendar.setPublic(false);
-      calendarService_.saveUserCalendar(username, calendar, true);
-      return calendar;
-    } catch (Exception e) {
-      fail("Exception when trying to create new calendar", e);
-    }
-    return null;
   }
 
   protected Calendar createPublicCalendar(String[] groups, String calName, String description) throws Exception {
@@ -160,36 +159,14 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     return calendar;
   }
 
-  /**
-   * call createPublicCalendar(new String[]{"/platform/users", "/organization/management/executive-board"}, calName, description)
-   * @param name
-   * @param description
-   * @return
-   */
-  @Deprecated
-  protected Calendar createPublicCalendar(String name, String description) {
-    try {
-      Calendar publicCalendar = new Calendar();
-      publicCalendar.setName(name);
-      publicCalendar.setDescription(description);
-      publicCalendar.setPublic(true);
-      publicCalendar.setGroups(new String[]{"/platform/users", "/organization/management/executive-board"});
-      calendarService_.savePublicCalendar(publicCalendar, true);
-      return publicCalendar;
-    } catch (Exception e) {
-      fail("Exception while create a public calendar", e);
-      return null;
-    }
-  }
-
-  protected EventCategory createEventCategory1(String username, String name) throws Exception {
+  protected EventCategory createUserEventCategory(String username, String name) throws Exception {
     EventCategory eventCategory = new EventCategory();
     eventCategory.setName(name);
     calendarService_.saveEventCategory(username, eventCategory, true);
     return eventCategory;
   }
 
-  public CalendarEvent createNewEventInstance(String summary) {
+  protected CalendarEvent createCalendarEventInstance(String summary) {
     CalendarEvent event = new CalendarEvent();
     event.setSummary(summary);
     java.util.Calendar from = java.util.Calendar.getInstance();
@@ -225,16 +202,5 @@ public abstract class BaseCalendarServiceTestCase extends AbstractKernelTest {
     Identity identity = new Identity(username, entries);
     ConversationState state = new ConversationState(identity);
     ConversationState.setCurrent(state);
-  }
-
-  @Deprecated
-  protected CalendarEvent newEvent(String summary) {
-    CalendarEvent event = new CalendarEvent();
-    event.setSummary(summary);
-    java.util.Calendar from = java.util.Calendar.getInstance();
-    event.setFromDateTime(from.getTime());
-    from.add(java.util.Calendar.HOUR, 1);
-    event.setToDateTime(from.getTime());
-    return event;
   }
 }
