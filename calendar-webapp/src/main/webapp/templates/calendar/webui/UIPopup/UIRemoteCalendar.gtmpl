@@ -45,6 +45,17 @@
         <%uicomponent.renderField(uicomponent.FIELD_AFTER_DATE_SELECTBOX)%>
       </div>
     </div>
+
+    <div class="control-group">
+      <label class="control-label"><%=uicomponent.getLabel(uicomponent.OAUTH_TOKEN)%>:</label>
+      <div class="controls">
+        <%uicomponent.renderField(uicomponent.OAUTH_TOKEN)%>
+      </div>
+      <div>
+        <a href="/portal/googleAuth?_oauthInteraction=start&_oauthCallback=/portal/intranet/calendar">Oauth authentication</a>
+      </div>
+    </div>
+
     <%              
       field = uicomponent.getChildById(uicomponent.USE_AUTHENTICATION);
       label = _ctx.appRes(uicomponent.id + ".label." + field.getId());

@@ -39,6 +39,7 @@ import org.exoplatform.services.log.Log;
 import org.exoplatform.web.application.AbstractApplicationMessage;
 import org.exoplatform.web.application.ApplicationMessage;
 import org.exoplatform.web.application.RequestContext;
+import org.exoplatform.web.security.AuthenticationRegistry;
 import org.exoplatform.webui.application.WebuiRequestContext;
 import org.exoplatform.webui.config.annotation.ComponentConfig;
 import org.exoplatform.webui.config.annotation.EventConfig;
@@ -54,6 +55,11 @@ import org.exoplatform.webui.form.UIFormTextAreaInput;
 import org.exoplatform.webui.form.input.UICheckBoxInput;
 import org.exoplatform.webui.form.validator.MandatoryValidator;
 import org.exoplatform.webui.form.validator.SpecialCharacterValidator;
+import org.gatein.security.oauth.common.OAuthConstants;
+import org.gatein.security.oauth.spi.OAuthPrincipal;
+import org.gatein.security.oauth.utils.OAuthUtils;
+
+import javax.servlet.http.HttpServletRequest;
 
 
 /**
@@ -85,6 +91,9 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
   private static final String FIELD_BEFORE_DATE_SELECTBOX = "beforeDate".intern();
   private static final String FIELD_AFTER_DATE_SELECTBOX = "afterDate".intern();
   protected static final String LAST_UPDATED = "lastUpdated".intern();
+
+  protected static final String OAUTH_TOKEN = "oauth_token";
+  protected static final String OAUTH_AUTHENTICATION = "oauth_authentication";
   
   private static Locale locale_ = null;
   private String remoteType;
@@ -100,6 +109,8 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
     addUIFormInput(new UIFormStringInput(NAME, NAME, null).addValidator(MandatoryValidator.class).addValidator(SpecialCharacterValidator.class));
     addUIFormInput(new UIFormTextAreaInput(DESCRIPTION, DESCRIPTION, null));
     addUIFormInput(new UICheckBoxInput(USE_AUTHENTICATION, USE_AUTHENTICATION, null));
+
+    addUIFormInput(new UIFormStringInput(OAUTH_TOKEN, OAUTH_TOKEN, null));
 
     UIFormSelectBox beforeDate = new UIFormSelectBox(FIELD_BEFORE_DATE_SELECTBOX, FIELD_BEFORE_DATE_SELECTBOX, getOptionsSelectBox());
     beforeDate.setDefaultValue("0t");
@@ -121,8 +132,21 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
     addUIFormInput(new UIFormSelectBox(AUTO_REFRESH, AUTO_REFRESH, options));  
     addUIFormInput(new UIFormColorPicker(COLOR, COLOR)); 
   }
-  
-  protected void setLocale() throws Exception {
+
+    @Override
+    public void processRender(WebuiRequestContext context) throws Exception {
+        UIFormStringInput token = getUIStringInput(OAUTH_TOKEN);
+        AuthenticationRegistry authRegistry = getApplicationComponent(AuthenticationRegistry.class);
+        HttpServletRequest httpRequest = Util.getPortalRequestContext().getRequest();
+        OAuthPrincipal principal = (OAuthPrincipal)authRegistry.getAttributeOfClient(httpRequest, OAuthConstants.ATTRIBUTE_AUTHENTICATED_OAUTH_PRINCIPAL);
+        if(principal != null) {
+            token.setValue(principal.getAccessToken().getAccessToken());
+            authRegistry.removeAttributeOfClient(httpRequest, OAuthConstants.ATTRIBUTE_AUTHENTICATED_OAUTH_PRINCIPAL);
+        }
+        super.processRender(context);
+    }
+
+    protected void setLocale() throws Exception {
     PortalRequestContext portalContext = Util.getPortalRequestContext();
     Locale locale = portalContext.getLocale();
     if (locale_ == null || !locale.getLanguage().equals(locale_.getLanguage())) {
