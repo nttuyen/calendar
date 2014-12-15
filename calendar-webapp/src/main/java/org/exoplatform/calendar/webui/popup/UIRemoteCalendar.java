@@ -16,19 +16,13 @@
  */
 package org.exoplatform.calendar.webui.popup;
 
-import java.io.IOException;
+import java.io.Serializable;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.TimeZone;
+import java.util.*;
 import org.exoplatform.calendar.CalendarUtils;
+import org.exoplatform.calendar.service.*;
 import org.exoplatform.calendar.service.Calendar;
-import org.exoplatform.calendar.service.CalendarService;
-import org.exoplatform.calendar.service.CalendarSetting;
-import org.exoplatform.calendar.service.RemoteCalendar;
-import org.exoplatform.calendar.service.Utils;
 import org.exoplatform.calendar.webui.UICalendarPortlet;
 import org.exoplatform.calendar.webui.UICalendarWorkingContainer;
 import org.exoplatform.calendar.webui.UIFormColorPicker;
@@ -39,7 +33,6 @@ import org.exoplatform.services.log.Log;
 import org.exoplatform.web.application.AbstractApplicationMessage;
 import org.exoplatform.web.application.ApplicationMessage;
 import org.exoplatform.web.application.RequestContext;
-import org.exoplatform.web.security.AuthenticationRegistry;
 import org.exoplatform.webui.application.WebuiRequestContext;
 import org.exoplatform.webui.config.annotation.ComponentConfig;
 import org.exoplatform.webui.config.annotation.EventConfig;
@@ -55,9 +48,8 @@ import org.exoplatform.webui.form.UIFormTextAreaInput;
 import org.exoplatform.webui.form.input.UICheckBoxInput;
 import org.exoplatform.webui.form.validator.MandatoryValidator;
 import org.exoplatform.webui.form.validator.SpecialCharacterValidator;
-import org.gatein.security.oauth.common.OAuthConstants;
-import org.gatein.security.oauth.spi.OAuthPrincipal;
-import org.gatein.security.oauth.utils.OAuthUtils;
+import org.gatein.security.oauth.consumer.*;
+import org.gatein.security.oauth.consumer.util.OAuth;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -91,9 +83,15 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
   private static final String FIELD_BEFORE_DATE_SELECTBOX = "beforeDate".intern();
   private static final String FIELD_AFTER_DATE_SELECTBOX = "afterDate".intern();
   protected static final String LAST_UPDATED = "lastUpdated".intern();
-
   protected static final String OAUTH_TOKEN = "oauth_token";
-  protected static final String OAUTH_AUTHENTICATION = "oauth_authentication";
+
+  protected String accessTokenLink = null;
+  private String authType = null;
+
+  private final OAuthService oauthService;
+  private final OAuthConsumerRegistry oauthRegistry;
+  private final CalendarService calendarService;
+  private final RemoteCalendarService remoteCalendarService;
   
   private static Locale locale_ = null;
   private String remoteType;
@@ -130,21 +128,44 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
       options.add(new SelectItemOption<String>(s, s));
     }
     addUIFormInput(new UIFormSelectBox(AUTO_REFRESH, AUTO_REFRESH, options));  
-    addUIFormInput(new UIFormColorPicker(COLOR, COLOR)); 
+    addUIFormInput(new UIFormColorPicker(COLOR, COLOR));
+
+    this.oauthService = getApplicationComponent(OAuthService.class);
+    this.oauthRegistry = getApplicationComponent(OAuthConsumerRegistry.class);
+    this.calendarService = getApplicationComponent(CalendarService.class);
+    this.remoteCalendarService = calendarService.getRemoteCalendarService();
   }
 
     @Override
     public void processRender(WebuiRequestContext context) throws Exception {
+      if("bearer".equals(this.authType)) {
         UIFormStringInput token = getUIStringInput(OAUTH_TOKEN);
-        AuthenticationRegistry authRegistry = getApplicationComponent(AuthenticationRegistry.class);
-        HttpServletRequest httpRequest = Util.getPortalRequestContext().getRequest();
-        OAuthPrincipal principal = (OAuthPrincipal)authRegistry.getAttributeOfClient(httpRequest, OAuthConstants.ATTRIBUTE_AUTHENTICATED_OAUTH_PRINCIPAL);
-        if(principal != null) {
-            token.setValue(principal.getAccessToken().getAccessToken());
-            authRegistry.removeAttributeOfClient(httpRequest, OAuthConstants.ATTRIBUTE_AUTHENTICATED_OAUTH_PRINCIPAL);
+        if(remoteCalendar.getAccessToken() != null) {
+          token.setValue(remoteCalendar.getAccessToken());
+        } else {
+          OAuthConsumer consumer = oauthRegistry.getConsumer("google");
+          if(consumer != null) {
+            OAuthAccessor accessor = oauthService.getAccessor(consumer, new RemoteCalendarOAuthTokenManager(remoteCalendar));
+
+            HttpServletRequest request = Util.getPortalRequestContext().getRequest();
+            String currentPath = request.getRequestURI();
+            accessor.setRedirectTo(currentPath);
+            accessor.setRedirectAfterError(currentPath);
+            accessor.saveOAuthState(request);
+            accessTokenLink = accessor.getRequestTokenURL();
+          }
         }
-        super.processRender(context);
+      }
+      super.processRender(context);
     }
+
+  public String getAccessTokenLink() {
+    return this.accessTokenLink;
+  }
+
+  public String getAuthType() {
+    return this.authType;
+  }
 
     protected void setLocale() throws Exception {
     PortalRequestContext portalContext = Util.getPortalRequestContext();
@@ -193,6 +214,7 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
         setDescription(rCalendar.getDescription());
         remoteCalendar = rCalendar;
       }
+      this.authType = this.remoteCalendarService.getAuthenticationSchema(url);
     } catch (Exception e) {
       if (logger.isDebugEnabled()) logger.debug(String.format("Loading the remote calendar information from %s failed", url), e);
     }
@@ -211,6 +233,7 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
     remoteCalendar = calService.getRemoteCalendar(username, calendarId_);
     this.remoteType = remoteCalendar.getType();
     setUrl(remoteCalendar.getRemoteUrl());
+    this.authType = remoteCalendarService.getAuthenticationSchema(remoteCalendar.getRemoteUrl());
     this.getUIStringInput(URL).setReadOnly(false);
     setCalendarName(calService.getUserCalendar(username, calendarId_).getName());
     setDescription(calendar.getDescription());
@@ -329,7 +352,35 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
       remoteCalendar.setCalendarColor(uiform.getSelectColor());
       remoteCalendar.setDescription(uiform.getDescription());
       Calendar eXoCalendar = null;
-      try {       
+
+      RemoteCalendarService remoteCalendarService = calService.getRemoteCalendarService();
+
+      //. Check user input info
+      if(uiform.getUseAuthentication()) {
+        remoteCalendar.setRemoteUser(uiform.getRemoteUser());
+        remoteCalendar.setRemotePassword(uiform.getRemotePassword());
+        if(CalendarUtils.isEmpty(remoteCalendar.getRemoteUser())) {
+          // pop-up error message: require remote username
+          event.getRequestContext().getUIApplication().addMessage(new ApplicationMessage("UIRemoteCalendar.msg.remote-user-name-required", null, AbstractApplicationMessage.WARNING));
+          return;
+        }
+      }
+
+      try {
+        if (!remoteCalendarService.checkAccessible(remoteCalendar)) {
+          String messageKey = "UIRemoteCalendar.msg.url-is-invalid";
+          if(!Utils.isEmpty(remoteCalendar.getUsername()) || !Utils.isEmpty(remoteCalendar.getAccessToken())) {
+            messageKey = "UIRemoteCalendar.msg.url-is-invalid-or-wrong-authentication";
+          }
+          event.getRequestContext().getUIApplication().addMessage(new ApplicationMessage(messageKey, null, AbstractApplicationMessage.WARNING));
+          return;
+        }
+      } catch (UnsupportedOperationException ex) {
+        event.getRequestContext().getUIApplication().addMessage(new ApplicationMessage("UIRemoteCalendar.msg.remote-server-doesnt-support-caldav-access", null, AbstractApplicationMessage.WARNING));
+        return;
+      }
+
+      /*try {
         if (!uiform.getUseAuthentication()) {
           // check valid url
           if(!calService.isValidRemoteUrl(remoteCalendar.getRemoteUrl(), remoteCalendar.getType(), "", "")) {
@@ -366,7 +417,7 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
       catch (Exception e) {
         logger.warn("Exception occurs when connecting to remote server", e);
         return;
-      }
+      }*/
       
       try {
         if (uiform.isAddNew_) {
@@ -424,4 +475,33 @@ public class UIRemoteCalendar extends UIForm implements UIPopupComponent {
     }
   }
 
+  public static class RemoteCalendarOAuthTokenManager implements OAuthTokenManager, Serializable {
+    private final RemoteCalendar calendar;
+
+    public RemoteCalendarOAuthTokenManager(RemoteCalendar calendar) {
+      this.calendar = calendar;
+    }
+
+    @Override
+    public Token getAccessToken(OAuthConsumer consumer) {
+        if(this.calendar.getAccessToken() != null) {
+            return new Token(calendar.getAccessToken(), calendar.getAccessTokenSecret());
+        }
+        return null;
+    }
+
+    @Override
+    public void saveAccessToken(OAuthConsumer consumer, Token token) {
+        calendar.setAccessToken(token.token);
+        calendar.setAccessTokenSecret(token.secret);
+    }
+
+    @Override
+    public Token cleanAccessToken(OAuthConsumer consumer) {
+        Token t = this.getAccessToken(consumer);
+        calendar.setAccessToken(null);
+        calendar.setAccessTokenSecret(null);
+        return t;
+    }
+  }
 }

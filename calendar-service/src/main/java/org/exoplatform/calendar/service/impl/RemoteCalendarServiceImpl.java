@@ -37,19 +37,14 @@ import javax.jcr.ItemExistsException;
 import javax.jcr.Node;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import org.apache.commons.httpclient.Credentials;
-import org.apache.commons.httpclient.Header;
-import org.apache.commons.httpclient.HostConfiguration;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.UsernamePasswordCredentials;
-import org.apache.commons.httpclient.auth.AuthScope;
+import org.apache.commons.httpclient.*;
+import org.apache.commons.httpclient.auth.*;
 import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.methods.HeadMethod;
 import org.apache.commons.httpclient.methods.OptionsMethod;
+import org.apache.commons.httpclient.params.HttpClientParams;
 import org.apache.commons.lang.StringUtils;
-import org.apache.jackrabbit.webdav.DavConstants;
-import org.apache.jackrabbit.webdav.DavServletResponse;
-import org.apache.jackrabbit.webdav.MultiStatus;
-import org.apache.jackrabbit.webdav.MultiStatusResponse;
+import org.apache.jackrabbit.webdav.*;
 import org.apache.jackrabbit.webdav.client.methods.ReportMethod;
 import org.apache.jackrabbit.webdav.property.DavProperty;
 import org.apache.jackrabbit.webdav.property.DavPropertyName;
@@ -149,6 +144,7 @@ public class RemoteCalendarServiceImpl implements RemoteCalendarService {
     }
   }
 
+  @Deprecated
   @Override
   public boolean isValidRemoteUrl(String url, String type, String remoteUser, String remotePassword) throws IOException, UnsupportedOperationException {
     try {
@@ -292,9 +288,18 @@ public class RemoteCalendarServiceImpl implements RemoteCalendarService {
     }
 
     if (CalendarService.CALDAV.equals(remoteCalendar.getType())) {
-      Calendar eXoCalendar = synchronizeWithCalDavServer(remoteCalendar);
-      storage_.setRemoteCalendarLastUpdated(username, eXoCalendar.getId(), Utils.getGreenwichMeanTime());
-      return eXoCalendar;
+      try {
+        Calendar eXoCalendar = synchronizeWithCalDavServer(remoteCalendar);
+        storage_.setRemoteCalendarLastUpdated(username, eXoCalendar.getId(), Utils.getGreenwichMeanTime());
+        return eXoCalendar;
+      } catch (DavException ex) {
+        //Unauthorization
+        if(ex.getErrorCode() == 401) {
+          //TODO: Notice user that authentication is expired and need to update
+          // will throw a RuntimeException here?
+        }
+      }
+      return null;
     }
 
     return null;
@@ -1001,7 +1006,7 @@ public class RemoteCalendarServiceImpl implements RemoteCalendarService {
     if (Utils.isEmpty(host))
       host = remoteCalendar.getRemoteUrl();
     hostConfig.setHost(host);
-    HttpClient client = new HttpClient();
+    CustomHttpClient client = new CustomHttpClient();
     client.setHostConfiguration(hostConfig);
     client.getHttpConnectionManager().getParams().setConnectionTimeout(10000);
     client.getHttpConnectionManager().getParams().setSoTimeout(10000);
@@ -1009,6 +1014,8 @@ public class RemoteCalendarServiceImpl implements RemoteCalendarService {
     if (!Utils.isEmpty(remoteCalendar.getRemoteUser())) {
       Credentials credentials = new UsernamePasswordCredentials(remoteCalendar.getRemoteUser(), remoteCalendar.getRemotePassword());
       client.getState().setCredentials(new AuthScope(host, AuthScope.ANY_PORT, AuthScope.ANY_REALM), credentials);
+    } else if(!Utils.isEmpty(remoteCalendar.getAccessToken())) {
+      client.setOauthAccessToken(remoteCalendar.getAccessToken());
     }
     return client;
   }
@@ -1092,5 +1099,152 @@ public class RemoteCalendarServiceImpl implements RemoteCalendarService {
       }
     }
     return remoteCalendar;
+  }
+
+  @Override
+  public boolean checkAccessible(RemoteCalendar remoteCalendar) {
+    try {
+      boolean isOauth = false;
+      HttpClient client = new HttpClient();
+      HostConfiguration hostConfig = new HostConfiguration();
+      String host = new URL(remoteCalendar.getRemoteUrl()).getHost();
+      if (StringUtils.isEmpty(host)) host = remoteCalendar.getRemoteUrl();
+      hostConfig.setHost(host);
+      client.setHostConfiguration(hostConfig);
+      Credentials credentials = null;
+      client.setHostConfiguration(hostConfig);
+      if (!StringUtils.isEmpty(remoteCalendar.getRemoteUser())) {
+        credentials = new UsernamePasswordCredentials(remoteCalendar.getRemoteUser(), remoteCalendar.getRemotePassword());
+        client.getState().setCredentials(new AuthScope(host, AuthScope.ANY_PORT, AuthScope.ANY_REALM), credentials);
+      } else if(!StringUtils.isEmpty(remoteCalendar.getAccessToken())) {
+        isOauth = true;
+      }
+
+      if (CalendarService.ICALENDAR.equals(remoteCalendar.getType())) {
+        GetMethod get = new GetMethod(remoteCalendar.getRemoteUrl());
+        client.executeMethod(get);
+        int statusCode = get.getStatusCode();
+        get.releaseConnection();
+        return (statusCode == HttpURLConnection.HTTP_OK);
+      } else {
+        if (CalendarService.CALDAV.equals(remoteCalendar.getType())) {
+          OptionsMethod options = new OptionsMethod(remoteCalendar.getRemoteUrl());
+          if(isOauth) {
+            options.addRequestHeader("Authorization", "Bearer " + remoteCalendar.getAccessToken());
+          }
+          client.executeMethod(options);
+          Header header = options.getResponseHeader("DAV");
+          options.releaseConnection();
+          if (header == null) {
+            if (logger.isDebugEnabled()) {
+              logger.debug("Cannot connect to remoter server or not support WebDav access");
+            }
+            return false;
+          }
+          Boolean support = header.toString().contains("calendar-access");
+          options.releaseConnection();
+          if (!support) {
+            if (logger.isDebugEnabled()) {
+              logger.debug("Remote server does not support CalDav access");
+            }
+            throw new UnsupportedOperationException("Remote server does not support CalDav access");
+          }
+          return support;
+        }
+        return false;
+      }
+    } catch (MalformedURLException e) {
+      if (logger.isDebugEnabled())
+        logger.debug(e.getMessage(), e);
+      throw new RuntimeException("URL is invalid. Maybe no legal protocol or URl could not be parsed");
+    } catch (IOException e) {
+      if (logger.isDebugEnabled())
+        logger.debug(e.getMessage(), e);
+      throw new RuntimeException("Error occurs when connecting to remote server");
+    }
+  }
+
+  @Override
+  public String getAuthenticationSchema(String url) {
+    try {
+      HttpClient client = new HttpClient();
+      HostConfiguration hostConfig = new HostConfiguration();
+      String host = new URL(url).getHost();
+      if (StringUtils.isEmpty(host))
+        host = url;
+      hostConfig.setHost(host);
+      client.setHostConfiguration(hostConfig);
+      HeadMethod headMethod = new HeadMethod(url);
+      int response = client.executeMethod(headMethod);
+      if(response == 401) {
+        Header header = headMethod.getResponseHeader("WWW-Authenticate");
+        System.out.println("Key: " + header.getName());
+        System.out.println("Value: " + header.getValue());
+        String value = header.getValue();
+        if(value != null) {
+          value = value.trim().toLowerCase();
+          if(value.startsWith("basic")) {
+            return "basic";
+          } else if(value.startsWith("bearer")) {
+            return "bearer";
+          }
+        }
+      }
+      return null;
+    } catch (MalformedURLException e) {
+      if (logger.isDebugEnabled())
+        logger.debug(e.getMessage(), e);
+      throw new RuntimeException("URL is invalid. Maybe no legal protocol or URl could not be parsed");
+    } catch (IOException e) {
+      if (logger.isDebugEnabled())
+        logger.debug(e.getMessage(), e);
+      throw new RuntimeException("Error occurs when connecting to remote server");
+    }
+  }
+
+  public static class CustomHttpClient extends HttpClient {
+    private String oauthAccessToken = null;
+    public void setOauthAccessToken(String accessToken) {
+      this.oauthAccessToken = accessToken;
+    }
+
+    public CustomHttpClient() {
+    }
+
+    public CustomHttpClient(HttpClientParams params) {
+      super(params);
+    }
+
+    public CustomHttpClient(HttpClientParams params, HttpConnectionManager httpConnectionManager) {
+      super(params, httpConnectionManager);
+    }
+
+    public CustomHttpClient(HttpConnectionManager httpConnectionManager) {
+      super(httpConnectionManager);
+    }
+
+    @Override
+    public int executeMethod(HostConfiguration hostconfig, HttpMethod method, HttpState state) throws IOException, HttpException {
+      addOAuth2Header(method);
+      return super.executeMethod(hostconfig, method, state);
+    }
+
+    @Override
+    public int executeMethod(HttpMethod method) throws IOException, HttpException {
+      addOAuth2Header(method);
+      return super.executeMethod(method);
+    }
+
+    @Override
+    public int executeMethod(HostConfiguration hostConfiguration, HttpMethod method) throws IOException, HttpException {
+      addOAuth2Header(method);
+      return super.executeMethod(hostConfiguration, method);
+    }
+
+    private void addOAuth2Header(HttpMethod method) {
+      if(this.oauthAccessToken != null) {
+        method.addRequestHeader("Authorization", "Bearer " + oauthAccessToken);
+      }
+    }
   }
 }

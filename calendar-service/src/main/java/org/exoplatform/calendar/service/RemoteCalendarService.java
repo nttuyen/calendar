@@ -28,6 +28,7 @@ import java.io.InputStream;
 public interface RemoteCalendarService {
 
   /**
+   * This method is deprecated, use {@link #checkAccessible(RemoteCalendar)}.
    * Check if the remote url is valid, in 2 cases of iCalendar url or CalDav url, with authentication
    * @param url the remote url
    * @param type the type of remote calendar, iCalendar or CalDav
@@ -36,6 +37,7 @@ public interface RemoteCalendarService {
    * @return true if remote url is available in case of iCalendar and CalDav access support in case of CalDav
    * @throws Exception
    */
+  @Deprecated
   boolean isValidRemoteUrl(String url, String type, String remoteUser, String remotePassword) throws IOException, UnsupportedOperationException;
 
   /**
@@ -76,5 +78,8 @@ public interface RemoteCalendarService {
    * @throws Exception
    */
   RemoteCalendar getRemoteCalendar(String url, String type, String remoteUser, String remotePassword) throws Exception;
-  
+
+  String getAuthenticationSchema(String url);
+
+  boolean checkAccessible(RemoteCalendar remoteCalendar);
 }

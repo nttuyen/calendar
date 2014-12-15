@@ -217,23 +217,8 @@
       </dependency>
       <dependency>
         <groupId>org.gatein.portal</groupId>
-        <artifactId>exo.portal.component.web.oauth-common</artifactId>
+        <artifactId>exo.portal.component.web.oauth</artifactId>
         <version>${org.gatein.portal.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.gatein.portal</groupId>
-        <artifactId>exo.portal.component.web.oauth-web</artifactId>
-        <version>${org.gatein.portal.version}</version>
-        <exclusions>
-          <exclusion>
-            <groupId>org.jboss.web</groupId>
-            <artifactId>jbossweb</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>jboss.web</groupId>
-            <artifactId>servlet-api</artifactId>
-          </exclusion>
-        </exclusions>
       </dependency>
       <dependency>
         <groupId>org.gatein.portal</groupId>

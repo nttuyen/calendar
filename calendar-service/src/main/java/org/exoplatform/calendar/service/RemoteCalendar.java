@@ -53,6 +53,9 @@ public class RemoteCalendar {
 
   private String   remotePassword;
 
+  private String   accessToken;
+  private String   accessTokenSecret;
+
   private Calendar lastUpdated;
   
   private String calendarColor;
@@ -189,6 +192,22 @@ public class RemoteCalendar {
 
   public Calendar getAfterTime() {
     return calculateTime(afterDate, false);
+  }
+
+  public String getAccessToken() {
+    return accessToken;
+  }
+
+  public void setAccessToken(String accessToken) {
+    this.accessToken = accessToken;
+  }
+
+  public String getAccessTokenSecret() {
+    return accessTokenSecret;
+  }
+
+  public void setAccessTokenSecret(String accessTokenSecret) {
+        this.accessTokenSecret = accessTokenSecret;
   }
 
   private Calendar calculateTime(long time, boolean isBefore) {
